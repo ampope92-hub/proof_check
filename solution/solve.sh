@@ -1,20 +1,12 @@
 #!/bin/bash
-# Oracle solution.
-#
-# Document what was actually wrong and how the fix was derived — a reviewer reads this
-# to judge whether the task is solvable by reasoning rather than by guessing:
-#
-#   src/summarize.py   Three defects. Entries came back in filesystem order instead of
-#                      sorted by name; total_words counted files rather than words; and
-#                      the report was written without its trailing newline.
-#
-# Harbor mounts solution/ at /solution/ and runs this script as the oracle agent.
-set -euo pipefail
+# Reference solution: drop the finished checker into the project, build it the way the grader
+# does, then read the archive here once so the build is not the only thing shown to work. The read
+# is time bounded so an archive that is not up yet cannot hang the run.
+set -e
 
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cp -r /solution/src/. /app/proofcheck/src/
+/app/proofcheck/build.sh
 
-cp "$HERE/src/summarize.py" /app/src/summarize.py
-
-python3 /app/src/summarize.py --data /app/data --out /app/out/report.json
-
-sha256sum /app/out/report.json
+echo "built, checking the archive once"
+cd /app/proofcheck
+timeout 120 /app/proofcheck/bin/proofcheck || echo "the archive did not answer from here, which is fine at build time"

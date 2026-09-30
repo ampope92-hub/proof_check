@@ -1,100 +1,156 @@
-"""Verifier for the skeleton task.
+"""Grades the two runs tests/test.sh made of the agent's checker.
 
-Two things are graded independently. The report has to match the approved bytes for the
-shipped inputs, and the agent's own program has to reproduce those bytes when re-run
-against inputs it has never seen. The second is what stops a hand-written report from
-passing: the artifact alone is cheap to fake, re-deriving it on held-out data is not.
-
-Replace the whole file for a real task, but keep the shape: golden bytes, a held-out
-re-run, and a determinism check.
+Each run's standard output is the report; tests/golden/<run>.txt is the report that archive must
+get, one "<job> OK" or "<job> FAIL <line>" per job in the order the archive lists its jobs. Every
+job in both archives exists to make one reading of the README's rules show: which job carries
+which rule is written next to its test below.
 """
 
-import hashlib
-import json
-import shutil
-import subprocess
 from pathlib import Path
 
-import pytest
+RUN = Path("/opt/run")
+GOLDEN = Path("/tests/golden")
+LIMIT_MS = 60_000
 
-APP = Path("/app")
-SRC = APP / "src" / "summarize.py"
-REPORT = APP / "out" / "report.json"
-DATA = APP / "data"
-HOLDOUT = Path("/tests/holdout")
-
-# Scratch space owned by the sandbox user; see tests/Dockerfile.
-WORK_OUT = Path("/work/out")
-
-SANDBOX_UID = 12000
-DROP_PRIVILEGES = [
-    "setpriv",
-    f"--reuid={SANDBOX_UID}",
-    f"--regid={SANDBOX_UID}",
-    "--clear-groups",
-]
-
-# SHA-256 of the report each input set must produce. Generated from solution/src.
-EXPECTED_PRIMARY = "60fec4718722649de61a0a56094fa49cf19597bd942244b27c77cea81352ce57"
-EXPECTED_HOLDOUT = {"h1": "a3cca7560ba22f8ec8e43ead53cee7566e713086e19c21ef42bd785bc7da77ba"}
-
-
-def sha256(path):
-    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+# which rule each job isolates (names are the ones the archives list)
+SAMPLE = {
+    "run-0316": "clean",     # extension RAT lemmas, a variable reused after its clause was deleted,
+                             # a clause learned twice with one copy deleted, reasons restated and deleted
+    "job-5260": "dropped",   # a block lemma after one of its clauses was deleted
+    "job-3127": "unit",      # a chain unit that leans on a deleted unit clause
+    "sat-1736": "reason",    # a block lemma whose false literal lost its only reason to a deletion
+    "cnf-4008": "pivot",     # an extension clause whose first literal is not its pivot
+}
+HIDDEN = {
+    "sat-7095": "clean",
+    "sat-1350": "dropped",
+    "cnf-5219": "unit",
+    "sat-2364": "reason",
+    "sat-2640": "pivot",
+    "sat-4684": "large",     # near the README's size bounds; a reason deleted late
+}
 
 
-def run_agent_program(data_dir, out_path):
-    """Runs the agent's own program, unprivileged, against a directory of our choosing."""
-    return subprocess.run(
-        DROP_PRIVILEGES
-        + ["python3", str(SRC), "--data", str(data_dir), "--out", str(out_path)],
-        capture_output=True,
-        text=True,
-        timeout=120,
-    )
+def golden(run):
+    rows = [ln.split() for ln in (GOLDEN / f"{run}.txt").read_text().splitlines() if ln.strip()]
+    return [(r[0], " ".join(r[1:])) for r in rows]
 
 
-def test_report_exists():
-    """The declared artifact was produced at the documented path."""
-    assert REPORT.is_file(), f"{REPORT} was not created"
+def report(run):
+    """The report as (job, verdict) pairs. Trailing blanks, a missing final newline and blank
+    lines are all accepted; anything else on a line is kept and will not match."""
+    path = RUN / f"report_{run}.txt"
+    text = path.read_bytes().decode("utf-8", "replace") if path.exists() else ""
+    out = []
+    for ln in text.splitlines():
+        words = ln.split()
+        if words:
+            out.append((words[0], " ".join(words[1:])))
+    return out
 
 
-def test_report_is_valid_json():
-    """The report parses and carries the documented top-level keys."""
-    data = json.loads(REPORT.read_text())
-    assert set(data) == {"files", "total_words"}, f"unexpected top-level keys: {sorted(data)}"
+def finished(run):
+    rc, ms = (RUN / f"status_{run}.txt").read_text().split()
+    return int(rc), int(ms)
 
 
-def test_report_matches_approved_bytes():
-    """The report is byte-identical to the approved output for the shipped inputs."""
-    actual = sha256(REPORT)
-    assert actual == EXPECTED_PRIMARY, (
-        f"report.json does not match the approved bytes\n"
-        f"  expected sha256 {EXPECTED_PRIMARY}\n  actual   sha256 {actual}"
-    )
+def verdict_of(run, job):
+    got = dict(report(run))
+    want = dict(golden(run))
+    assert job in want
+    return got.get(job), want[job]
 
 
-@pytest.mark.parametrize("name", sorted(EXPECTED_HOLDOUT))
-def test_holdout_reproduces_approved_bytes(name):
-    """Re-running the agent's program on unseen inputs reproduces the approved bytes.
-
-    This is the anti-cheat axis: it proves the report on disk was generated by the
-    program rather than written by hand or pinned to the shipped fixtures.
-    """
-    out = WORK_OUT / f"{name}.json"
-    result = run_agent_program(HOLDOUT / name, out)
-    assert result.returncode == 0, f"program failed on held-out set {name}:\n{result.stderr}"
-
-    actual = sha256(out)
-    assert actual == EXPECTED_HOLDOUT[name], (
-        f"held-out set {name} did not reproduce the approved bytes\n"
-        f"  expected sha256 {EXPECTED_HOLDOUT[name]}\n  actual   sha256 {actual}"
-    )
+def check_job(run, kind, table):
+    job = next(j for j, k in table.items() if k == kind)
+    got, want = verdict_of(run, job)
+    assert got == want, f"{run} job {job} ({kind}): report says {got!r}, the proof earns {want!r}"
 
 
-def test_output_is_deterministic():
-    """Two runs over the same inputs produce identical bytes."""
-    first, second = WORK_OUT / "det-1.json", WORK_OUT / "det-2.json"
-    for out in (first, second):
-        assert run_agent_program(DATA, out).returncode == 0, "program failed on shipped inputs"
-    assert sha256(first) == sha256(second), "program output is not deterministic"
+def test_build():
+    """The collected .hs sources compile with the README's ghc line into bin/proofcheck."""
+    assert (RUN / "build_check.txt").read_text().strip() == "ok"
+
+
+def test_sample_run_ended_in_time():
+    """The run against the environment's archive (moved to another address and port, smaller
+    pages, 6 requests per connection) ends before the 60 second wall limit."""
+    rc, ms = finished("sample")
+    assert ms < LIMIT_MS - 100, f"still running at the limit (exit status {rc}, {ms} ms)"
+
+
+def test_sample_report_lists_every_job_in_archive_order():
+    """One line per job, in the order JOBS gives, each '<job> OK' or '<job> FAIL <line>', and
+    nothing else."""
+    assert [j for j, _ in report("sample")] == [j for j, _ in golden("sample")]
+
+
+def test_sample_clean_proof_is_ok():
+    """The clean job needs RAT on the first literal, deletions matched as sets, one copy of a
+    twice-learned clause surviving its deletion, and a forced literal surviving the deletion of a
+    reason that a unit or a second reason restated."""
+    check_job("sample", "clean", SAMPLE)
+
+
+def test_sample_deleted_clause_stops_counting():
+    """A lemma that needs a clause deleted a line earlier is rejected at its line."""
+    check_job("sample", "dropped", SAMPLE)
+
+
+def test_sample_deleted_unit_takes_its_literal():
+    """Deleting a unit clause leaves its literal unforced; the unit that leaned on it is rejected."""
+    check_job("sample", "unit", SAMPLE)
+
+
+def test_sample_deleted_reason_takes_its_literal():
+    """Deleting the only clause that forced a literal leaves it unforced; the lemma that needed it
+    false is rejected."""
+    check_job("sample", "reason", SAMPLE)
+
+
+def test_sample_rat_pivot_is_the_first_literal():
+    """A clause that is RAT only on its second literal is rejected."""
+    check_job("sample", "pivot", SAMPLE)
+
+
+def test_hidden_run_ended_in_time():
+    """The run against the held-back archive, reached by host name, ends before the 60 second
+    wall limit within 2 GiB of address space."""
+    rc, ms = finished("hidden")
+    assert ms < LIMIT_MS - 100, f"still running at the limit (exit status {rc}, {ms} ms)"
+
+
+def test_hidden_report_lists_every_job_in_archive_order():
+    """The held-back report has one line per job in the archive's order and nothing else."""
+    assert [j for j, _ in report("hidden")] == [j for j, _ in golden("hidden")]
+
+
+def test_hidden_clean_proof_is_ok():
+    """The held-back clean job, other sizes and constants, is OK."""
+    check_job("hidden", "clean", HIDDEN)
+
+
+def test_hidden_deleted_clause_stops_counting():
+    """Held back: a lemma that needs a deleted clause is rejected at its line."""
+    check_job("hidden", "dropped", HIDDEN)
+
+
+def test_hidden_deleted_unit_takes_its_literal():
+    """Held back: the unit that leaned on a deleted unit clause is rejected at its line."""
+    check_job("hidden", "unit", HIDDEN)
+
+
+def test_hidden_deleted_reason_takes_its_literal():
+    """Held back: the lemma that needed a literal whose only reason was deleted is rejected."""
+    check_job("hidden", "reason", HIDDEN)
+
+
+def test_hidden_rat_pivot_is_the_first_literal():
+    """Held back: a clause that is RAT only on its second literal is rejected."""
+    check_job("hidden", "pivot", HIDDEN)
+
+
+def test_hidden_large_job():
+    """The job near the README's size bounds gets its exact verdict (a reason deleted near the
+    end makes a late lemma fail)."""
+    check_job("hidden", "large", HIDDEN)

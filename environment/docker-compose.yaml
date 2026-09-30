@@ -1,0 +1,28 @@
+services:
+  # The checker's box. The harness supplies its build and keepalive; this file only says where
+  # the archive is.
+  main:
+    environment:
+      PROOFS_HOST: "127.0.0.1"
+      PROOFS_PORT: "7700"
+
+  # The proof archive, in its own image. Every service shares one network namespace, so the
+  # checker reaches it on the loopback address.
+  archive:
+    build:
+      context: .
+      dockerfile: Dockerfile.archive
+    restart: unless-stopped
+    command:
+      - "python3"
+      - "/srv/archive/archive.py"
+      - "--data"
+      - "/srv/archive/sample"
+      - "--host"
+      - "127.0.0.1"
+      - "--port"
+      - "7700"
+      - "--page"
+      - "400"
+      - "--requests"
+      - "25"

@@ -1,11 +1,5 @@
-The summariser in /app is wrong. It runs, but the report it writes does not match what
-downstream expects.
+Our solver farm files every unsatisfiable answer in a proof archive, the CNF it was given plus the DRAT proof it wrote, and nothing has ever checked those proofs. I want `/app/proofcheck` to read every job off the archive and print, for each one, whether its proof holds up and, if not, the line of the first addition that fails. The archive runs beside this box at `PROOFS_HOST` and `PROOFS_PORT`. `/app/proofcheck/README.md` covers how it talks, the text formats, the exact acceptance rule for an addition and the report line.
 
-Rebuild /app/out/report.json for the files under /app/data. The report is a JSON object with
-a "files" array — one entry per .txt file, each with its "name" and its "words" count — ordered
-by name, plus a "total_words" holding the sum of every word counted. It is indented by two
-spaces and ends with a trailing newline.
+The checker is a GHC program, built by `/app/proofcheck/build.sh` from the .hs files under `/app/proofcheck/src` (there's a stub) with the packages the GHC on this box already has. For grading only those .hs files are kept and rebuilt the same way, and the binary is run twice from `/app/proofcheck`: once against the archive you can see now, served on another address and port with smaller pages and fewer requests per connection, and once against an archive you haven't seen, reached by host name, whose jobs include one close to the size bounds in the README.
 
-Keep it driveable the way CI drives it: the program stays at /app/src/summarize.py and is run as
-`python3 /app/src/summarize.py --data <dir> --out <file>`. CI points it at directories other
-than the one shipped here.
+A run is killed once it has been going for 60 seconds on the wall clock, and then counts as failed. It is held to 2 GiB of address space and is not allowed to exec anything else. Every report line of both runs has to match exactly.
