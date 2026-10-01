@@ -9,8 +9,8 @@ artifacts = [
 [metadata]
 author_name = "anonymous"
 author_email = "anonymous"
-category = "Science"
-subcategory = "Math"
+category = "Software"
+subcategory = "Algorithms"
 tags = ["haskell", "sat", "drat", "proof-checking", "unit-propagation", "tcp"]
 languages = ["haskell"]
 difficulty = "advanced"
