@@ -26,8 +26,8 @@ TOKEN_CHARS = string.ascii_letters + string.digits
 
 
 def token():
-    """A fresh page token: 16 letters and digits."""
-    return "".join(secrets.choice(TOKEN_CHARS) for _ in range(16))
+    """A fresh page token: 8 to 64 letters and digits, the length drawn for each page."""
+    return "".join(secrets.choice(TOKEN_CHARS) for _ in range(8 + secrets.randbelow(57)))
 
 
 def load(data_dir, page, seed):

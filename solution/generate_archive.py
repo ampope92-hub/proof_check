@@ -30,6 +30,9 @@ out in RAT_SAMPLE below; held back, rat_job() from its seed, a lemma whose resol
 without being tautological and then one whose middle resolvent is not RUP. After it come the
 edge jobs: in the sample archive EMPTY_SAMPLE (an empty clause in the CNF) and TAB_WIDE_SAMPLE
 (tabs between literals, eight-literal clauses); held back, edge_job() from its seed, all three.
+Last come the cases written out in EMPTY_CNF_SAMPLE, STOP_SAMPLE and WIDE_RAT_SAMPLE (a CNF with
+no clauses, steps after an accepted empty clause, a RAT resolvent of nine literals); held back,
+the same from seeds, with steps after an accepted empty clause twice.
 
 The verdict is the recipe's own claim. solution/independent_check.py derives every verdict again
 from the files alone; its reports are tests/golden_ref/.
@@ -423,6 +426,86 @@ def edge_job(seed):
     return RawJob([f"p cnf {n} {len(cnf)}"] + cnf, proof, len(proof))
 
 
+# no clauses at all: the empty clause is not RUP
+EMPTY_CNF_SAMPLE = (["p cnf 1 0"], ["0"], 1)
+
+# the empty clause added from the two units, deleted with both units; the final one is not RUP
+STOP_SAMPLE = (["p cnf 1 2", "1 0", "-1 0"], ["0", "d 0", "d 1 0", "d -1 0", "0"], 5)
+
+# (1 ... 8) is RAT on 1 only through its resolvent with (-1 9), nine literals
+WIDE_RAT_SAMPLE = (["p cnf 9 2", "9 0", "-1 9 0"], ["1 2 3 4 5 6 7 8 0", "0"], 2)
+
+
+def lits_of(seed):
+    r = random.Random(seed)
+    n = r.randrange(30, 50)
+    vs = list(range(1, n + 1))
+    r.shuffle(vs)
+    return r, n, vs
+
+
+def text(c):
+    return " ".join(map(str, c + [0]))
+
+
+def empty_cnf_job(seed):
+    """Held back: a CNF with no clauses. Every lemma is RAT on a fresh positive first literal (no
+    negative literal appears anywhere), one is deleted, and the empty clause at the end is not RUP."""
+    r, n, vs = lits_of(seed)
+    seen, proof = [], []
+    for _ in range(r.randrange(3, 7)):
+        p = vs.pop()
+        proof.append(text([p] + r.sample(seen, min(len(seen), r.randrange(0, 4)))))
+        seen.append(p)
+    proof.insert(r.randrange(1, len(proof) + 1), "d " + proof[0])
+    proof.append("0")
+    return RawJob([f"p cnf {n} 0"], proof, len(proof))
+
+
+def stop_job(seed, reject_lemma):
+    """Held back: units t and -t make the empty clause RUP, so it and a few positive lemmas are
+    accepted; the proof then deletes the empty clause and both units and goes on with lemmas RAT
+    on fresh positive literals. With reject_lemma a unit (a) is rejected there, (-a b) being in
+    the CNF; otherwise the final empty clause is. Every other CNF clause is positive."""
+    r, n, vs = lits_of(seed)
+    t = vs.pop()
+    a, b = vs.pop(), vs.pop()
+    filler = vs[: len(vs) // 2]
+    fresh = vs[len(vs) // 2:]
+    cnf = [[t], [-t]] + [r.sample(filler, r.randrange(2, 5)) for _ in range(r.randrange(6, 12))]
+    if reject_lemma:
+        cnf.append(r.sample([-a, b], 2))
+    r.shuffle(cnf)
+    proof = ["0"] + [text(r.sample(filler, r.randrange(1, 4))) for _ in range(r.randrange(1, 4))]
+    proof += r.sample(["d 0", f"d {t} 0", f"d {-t} 0"], 3)
+    for _ in range(r.randrange(2, 5)):
+        proof.append(text([fresh.pop()] + r.sample(filler, r.randrange(0, 3))))
+    fail = None
+    if reject_lemma:
+        proof.append(f"{a} 0")
+        fail = len(proof)
+        proof.append(text([fresh.pop()]))
+    proof.append("0")
+    return RawJob([f"p cnf {n} {len(cnf)}"] + [text(c) for c in cnf], proof, fail or len(proof))
+
+
+def wide_rat_job(seed):
+    """Held back: an eight-literal lemma (p ...) over fresh variables is not RUP; it is RAT on p
+    through its one resolvent with (-p d1 .. dk), which is RUP only because of (d1 .. dk -m) and
+    the unit (m), so the resolvent needs all of its 8 + k literals. The empty clause at the end
+    is not RUP; the other clauses hold m."""
+    r, n, vs = lits_of(seed)
+    sign = [v if r.random() < .5 else -v for v in vs]
+    m, p = sign.pop(), sign.pop()
+    c = [p] + [sign.pop() for _ in range(7)]
+    d = [sign.pop() for _ in range(r.randrange(2, 5))]
+    cnf = [[m], r.sample([-p] + d, len(d) + 1), r.sample(d + [-m], len(d) + 1)]
+    cnf += [r.sample([m] + r.sample(sign, k), k + 1) for k in (r.randrange(1, 4) for _ in range(r.randrange(5, 10)))]
+    r.shuffle(cnf)
+    proof = [text(c[:1] + r.sample(c[1:], 7)), text([m]), "0"]
+    return RawJob([f"p cnf {n} {len(cnf)}"] + [text(x) for x in cnf], proof, 3)
+
+
 def fixed_job(spec):
     nv, cnf, proof, fail_line = spec
     job = Job(0, {})
@@ -462,9 +545,16 @@ ARCHIVES = {
 RAT_JOBS = {
     "sample": [("run-5583", lambda: fixed_job(RAT_SAMPLE)),
                ("cnf-2908", lambda: RawJob(*EMPTY_SAMPLE)),
-               ("job-6175", lambda: RawJob(*TAB_WIDE_SAMPLE))],
+               ("job-6175", lambda: RawJob(*TAB_WIDE_SAMPLE)),
+               ("sat-0471", lambda: RawJob(*EMPTY_CNF_SAMPLE)),
+               ("run-2219", lambda: RawJob(*STOP_SAMPLE)),
+               ("job-7738", lambda: RawJob(*WIDE_RAT_SAMPLE))],
     "hidden": [("cnf-6412", lambda: rat_job(9307)),
-               ("run-8843", lambda: edge_job(9308))],
+               ("run-8843", lambda: edge_job(9308)),
+               ("cnf-3055", lambda: empty_cnf_job(9309)),
+               ("job-9146", lambda: stop_job(9310, False)),
+               ("sat-6620", lambda: stop_job(9311, True)),
+               ("run-4417", lambda: wide_rat_job(9312))],
 }
 
 

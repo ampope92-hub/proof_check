@@ -28,6 +28,9 @@ SAMPLE = {
     "run-5583": "rat",       # a lemma that is RAT with a resolvent RUP but not tautological
     "cnf-2908": "empty",     # the empty clause in the CNF: every addition is RUP
     "job-6175": "tabwide",   # tabs between literals; eight-literal clauses force what the proof needs
+    "sat-0471": "nocnf",     # a CNF with no clauses
+    "run-2219": "stop",      # steps after an accepted empty clause
+    "job-7738": "widerat",   # a RAT resolvent of nine literals
 }
 HIDDEN = {
     "sat-7095": "clean",
@@ -38,6 +41,10 @@ HIDDEN = {
     "sat-4684": "large",     # near the README's size bounds; a reason deleted late
     "cnf-6412": "rat",       # RAT resolvents RUP through propagation; a middle resolvent not RUP
     "run-8843": "edge",      # an empty clause in the CNF, then deleted; tabs; eight-literal clauses
+    "cnf-3055": "nocnf",
+    "job-9146": "stop",      # the final empty clause is rejected
+    "sat-6620": "stoplemma", # a unit lemma is rejected
+    "run-4417": "widerat",   # a RAT resolvent of ten or more literals
 }
 
 
@@ -145,6 +152,13 @@ def test_sample_empty_clause_and_separators():
     check_job("sample", "tabwide", SAMPLE)
 
 
+def test_sample_no_clauses_empty_clause_then_more_steps_wide_resolvent():
+    """A CNF with no clauses; an accepted empty clause does not end the check, the steps after it
+    count; a RAT resolvent wider than eight literals is checked in full."""
+    for kind in ("nocnf", "stop", "widerat"):
+        check_job("sample", kind, SAMPLE)
+
+
 def test_hidden_run_ended_in_time():
     """The run against the held-back archive, reached by host name, ends before the 60 second
     wall limit within 2 GiB of address space."""
@@ -192,6 +206,13 @@ def test_hidden_empty_clause_and_separators():
     """Held back: a lemma accepted only through the CNF's empty clause, the empty clause deleted,
     tab-separated lines and eight-literal clauses, and an empty clause at the end that is not RUP."""
     check_job("hidden", "edge", HIDDEN)
+
+
+def test_hidden_no_clauses_empty_clause_then_more_steps_wide_resolvent():
+    """Held back: a CNF with no clauses; after an accepted empty clause is deleted, a later empty
+    clause and a later unit lemma are rejected; a RAT resolvent wider than eight literals."""
+    for kind in ("nocnf", "stop", "stoplemma", "widerat"):
+        check_job("hidden", kind, HIDDEN)
 
 
 def test_hidden_large_job():
