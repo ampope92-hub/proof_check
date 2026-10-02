@@ -18,8 +18,16 @@ import os
 import random
 import secrets
 import socketserver
+import string
 import sys
 import threading
+
+TOKEN_CHARS = string.ascii_letters + string.digits
+
+
+def token():
+    """A fresh page token: 16 letters and digits."""
+    return "".join(secrets.choice(TOKEN_CHARS) for _ in range(16))
 
 
 def load(data_dir, page, seed):
@@ -41,7 +49,7 @@ def load(data_dir, page, seed):
                 i += m
                 if i >= len(lines):
                     break
-            toks = ["start"] + [secrets.token_hex(8) for _ in cuts[1:]] + ["end"]
+            toks = ["start"] + [token() for _ in cuts[1:]] + ["end"]
             for k, (a, b) in enumerate(cuts):
                 body = b"".join(ln + b"\n" for ln in lines[a:b])
                 head = b"PAGE %d %s\n" % (b - a, toks[k + 1].encode())

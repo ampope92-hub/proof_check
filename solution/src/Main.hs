@@ -21,6 +21,7 @@ import Control.Monad
 import Data.Array.Base (unsafeRead, unsafeWrite)
 import Data.Array.IO
 import Data.Bits
+import Data.Char (isSpace)
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Char8 as BC
 import Data.Int
@@ -63,14 +64,14 @@ freezeVec (Vec ra rn) = (,) <$> readIORef ra <*> readIORef rn
 -- one clause line into the arena; returns (is deletion, length)
 parseInto :: Vec -> B.ByteString -> IO (Bool, Int)
 parseInto arena ln0 = do
-  let ln = BC.dropWhile (== ' ') ln0
+  let ln = BC.dropWhile isSpace ln0
       (isDel, rest) = case BC.uncons ln of
-        Just ('d', r) | B.null r || BC.head r == ' ' -> (True, r)
+        Just ('d', r) | B.null r || isSpace (BC.head r) -> (True, r)
         _ -> (False, ln)
   n <- go rest 0
   return (isDel, n)
   where
-    go !s !k = case BC.readInt (BC.dropWhile (== ' ') s) of
+    go !s !k = case BC.readInt (BC.dropWhile isSpace s) of
       Nothing -> return k
       Just (0, _) -> return k
       Just (x, r) -> pushVec arena (fromIntegral x) >> go r (k + 1)
@@ -477,7 +478,7 @@ main = do
       Nothing -> return ()
       _ -> void (newClause ln)
     nOrig <- readIORef nClauses
-    fetch "proof" $ \ln -> unless (B.null (BC.dropWhile (== ' ') ln)) $ do
+    fetch "proof" $ \ln -> unless (B.null (BC.dropWhile isSpace ln)) $ do
       c <- readIORef nClauses
       (isDel, _) <- newClause ln
       pushVec ops (if isDel then negate (fromIntegral c) - 1 else fromIntegral c)

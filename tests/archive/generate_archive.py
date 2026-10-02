@@ -27,7 +27,9 @@ recipe:
 
 Each archive also ends with one small RAT job (rat): in the sample archive the clauses written
 out in RAT_SAMPLE below; held back, rat_job() from its seed, a lemma whose resolvents are RUP
-without being tautological and then one whose middle resolvent is not RUP.
+without being tautological and then one whose middle resolvent is not RUP. After it come the
+edge jobs: in the sample archive EMPTY_SAMPLE (an empty clause in the CNF) and TAB_WIDE_SAMPLE
+(tabs between literals, eight-literal clauses); held back, edge_job() from its seed, all three.
 
 The verdict is the recipe's own claim. solution/independent_check.py derives every verdict again
 from the files alone; its reports are tests/golden_ref/.
@@ -343,6 +345,84 @@ def rat_job(seed):
     return job
 
 
+class RawJob:
+    """A job given as its lines, separators and all."""
+    def __init__(self, cnf, proof, fail_line):
+        self.cnf, self.proof, self.fail_line = cnf, proof, fail_line
+
+    verdict = Job.verdict
+
+    def cnf_lines(self):
+        return iter(self.cnf)
+
+    def proof_lines(self):
+        return iter(self.proof)
+
+
+# the empty clause is in the CNF, so every addition is RUP
+EMPTY_SAMPLE = (["p cnf 1 1", "0"], ["0"], None)
+
+# (1 2) and (-1 2) are written with a tab after the first literal; with units -3 ... -9 the
+# eight-literal clauses force 10 and 11, and the empty clause at the end is not RUP
+TAB_WIDE_SAMPLE = (
+    ["p cnf 11 11", "1\t2 0", "-1\t2 0"] + [f"-{v} 0" for v in range(3, 10)]
+    + ["3 4 5 6 10 7 8 9 0", "3 4 5 11 6 7 8 9 0"],
+    ["10 11 3 4 5 6 7 8 0", "d\t10\t11 3 4 5 6 7 8 0", "0"], 3)
+
+
+def edge_job(seed):
+    """Held back: the CNF holds the empty clause, so the first lemma (u) is accepted though it is
+    neither RUP nor RAT without it; the proof then deletes (u) and the empty clause. Seven units
+    make two eight-literal clauses force f1 and f2, f1 after the fourth literal and f2 before the
+    fifth. (x y) and (-x y) are written with a tab after x, other lines with tabs at random,
+    filler clauses of two to eight literals each hold one unit literal. The empty clause at the
+    end is not RUP."""
+    r = random.Random(seed)
+    n = r.randrange(40, 60)
+    vs = list(range(1, n + 1))
+    r.shuffle(vs)
+    lits = [v if r.random() < .5 else -v for v in vs]
+    x, y, u, v, w, f1, f2 = lits[:7]
+    units = lits[7:14]
+    filler = lits[14:]
+
+    def wide(f, lo, hi):
+        c = [-t for t in units]
+        r.shuffle(c)
+        c.insert(r.randrange(lo, hi + 1), f)
+        return c
+
+    def sat():
+        k = r.randrange(1, 8)
+        return r.sample([r.choice(units)] + [f if r.random() < .5 else -f for f in r.sample(filler, k)], k + 1)
+
+    w1, w2 = wide(f1, 4, 7), wide(f2, 0, 3)
+    body = [[t] for t in units] + [w1, w2, [-u, v, w]] + [sat() for _ in range(r.randrange(12, 20))]
+    r.shuffle(body)
+
+    def line(c, tabbed=None):
+        if tabbed is None:
+            tabbed = r.random() < .4
+        out = ""
+        for k, t in enumerate(c + [0]):
+            out += (("\t" if tabbed and r.random() < .6 else " ") if k else "") + str(t)
+        return out
+
+    cnf = [line(c) for c in body]
+    cnf.insert(r.randrange(len(cnf) + 1), "0")
+    cnf.insert(r.randrange(len(cnf) + 1), f"{-x}\t{y} 0")
+    cnf.insert(r.randrange(len(cnf) + 1), f"{x}\t{y} 0")
+    proof = [f"{u} 0", f"d {u} 0", "d 0"]
+    lemmas = [r.sample([f1, f2] + [-t for t in r.sample(units, 6)], 8) for _ in range(r.randrange(2, 5))]
+    for c in lemmas:
+        proof.append(line(c))
+    proof.append(line(r.sample(units, 1)))
+    for c in r.sample(lemmas, len(lemmas)):
+        proof.append("d\t" + line(r.sample(c, len(c)), tabbed=True))
+    proof.append("0")
+    return RawJob([f"p cnf {n} {len(cnf)}"] + cnf, proof, len(proof))
+
+
 def fixed_job(spec):
     nv, cnf, proof, fail_line = spec
     job = Job(0, {})
@@ -378,10 +458,13 @@ ARCHIVES = {
     ],
 }
 
-# the small RAT job each archive ends with, by name
+# the small jobs each archive ends with, by name
 RAT_JOBS = {
-    "sample": ("run-5583", lambda: fixed_job(RAT_SAMPLE)),
-    "hidden": ("cnf-6412", lambda: rat_job(9307)),
+    "sample": [("run-5583", lambda: fixed_job(RAT_SAMPLE)),
+               ("cnf-2908", lambda: RawJob(*EMPTY_SAMPLE)),
+               ("job-6175", lambda: RawJob(*TAB_WIDE_SAMPLE))],
+    "hidden": [("cnf-6412", lambda: rat_job(9307)),
+               ("run-8843", lambda: edge_job(9308))],
 }
 
 
@@ -413,10 +496,10 @@ def build_archive(which, out, golden):
         lines.append(f"{names[k]} {job.verdict()}")
         print(f"{names[k]} seed {seed} vars {job.nv} clauses {len(job.cnf)} "
               f"proof {len(job.proof)} -> {job.verdict()}", file=sys.stderr)
-    name, make = RAT_JOBS[which]
-    job = make()
-    write_job(job, os.path.join(out, name))
-    lines.append(f"{name} {job.verdict()}")
+    for name, make in RAT_JOBS[which]:
+        job = make()
+        write_job(job, os.path.join(out, name))
+        lines.append(f"{name} {job.verdict()}")
     with open(os.path.join(out, "jobs.txt"), "w") as fh:
         fh.write("".join(ln.split()[0] + "\n" for ln in lines))
     if golden:

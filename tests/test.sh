@@ -77,7 +77,8 @@ wipe_scratch() {
 
 # Build once, as the build user, from a fresh tree: the documented ghc line and nothing else. The
 # package environment files GHC would otherwise look for are switched off, and HOME is empty, so
-# the only packages in reach are the global ones the README names. The build is bounded at 900 s.
+# the only packages in reach are the global ones the README names. The build is bounded at 1800 s,
+# the build_timeout_sec of task.toml.
 echo failed > /opt/run/build_check.txt
 wipe_scratch
 /usr/bin/rm -rf /app/proofcheck
@@ -86,7 +87,7 @@ wipe_scratch
 /usr/bin/install -d -o runner -g runner -m 755 /app/proofcheck/bin /home/runner/ghc-out
 /usr/bin/chown -R runner:runner /app/proofcheck/src
 /usr/bin/find /app/proofcheck/src -type f -exec /usr/bin/touch {} +
-setsid /usr/bin/timeout --signal=KILL 900 \
+setsid /usr/bin/timeout --signal=KILL 1800 \
   setpriv --clear-groups --no-new-privs --reuid runner --regid runner \
   env -C /app/proofcheck HOME=/home/runner GHC_ENVIRONMENT=- \
     /usr/bin/ghc -O2 -i/app/proofcheck/src -outputdir /home/runner/ghc-out \

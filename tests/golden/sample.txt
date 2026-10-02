@@ -4,3 +4,5 @@ sat-1736 FAIL 1044
 job-5260 FAIL 919
 run-0316 OK
 run-5583 FAIL 2
+cnf-2908 OK
+job-6175 FAIL 3

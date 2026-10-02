@@ -26,6 +26,8 @@ SAMPLE = {
     "sat-1736": "reason",    # a block lemma whose false literal lost its only reason to a deletion
     "cnf-4008": "pivot",     # an extension clause whose first literal is not its pivot
     "run-5583": "rat",       # a lemma that is RAT with a resolvent RUP but not tautological
+    "cnf-2908": "empty",     # the empty clause in the CNF: every addition is RUP
+    "job-6175": "tabwide",   # tabs between literals; eight-literal clauses force what the proof needs
 }
 HIDDEN = {
     "sat-7095": "clean",
@@ -35,6 +37,7 @@ HIDDEN = {
     "sat-2640": "pivot",
     "sat-4684": "large",     # near the README's size bounds; a reason deleted late
     "cnf-6412": "rat",       # RAT resolvents RUP through propagation; a middle resolvent not RUP
+    "run-8843": "edge",      # an empty clause in the CNF, then deleted; tabs; eight-literal clauses
 }
 
 
@@ -135,6 +138,13 @@ def test_sample_rat_resolvent_is_checked_by_rup():
     check_job("sample", "rat", SAMPLE)
 
 
+def test_sample_empty_clause_and_separators():
+    """An empty clause in the CNF makes every addition RUP; tabs separate literals like spaces do,
+    and eight-literal clauses count in full."""
+    check_job("sample", "empty", SAMPLE)
+    check_job("sample", "tabwide", SAMPLE)
+
+
 def test_hidden_run_ended_in_time():
     """The run against the held-back archive, reached by host name, ends before the 60 second
     wall limit within 2 GiB of address space."""
@@ -176,6 +186,12 @@ def test_hidden_rat_resolvents_are_checked_by_rup():
     """Held back: a lemma whose resolvents are RUP only through propagation is accepted, and a unit
     whose middle resolvent of three is not RUP is rejected at its line."""
     check_job("hidden", "rat", HIDDEN)
+
+
+def test_hidden_empty_clause_and_separators():
+    """Held back: a lemma accepted only through the CNF's empty clause, the empty clause deleted,
+    tab-separated lines and eight-literal clauses, and an empty clause at the end that is not RUP."""
+    check_job("hidden", "edge", HIDDEN)
 
 
 def test_hidden_large_job():
