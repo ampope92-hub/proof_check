@@ -34,7 +34,10 @@ Last come the cases written out in EMPTY_CNF_SAMPLE, STOP_SAMPLE and WIDE_RAT_SA
 no clauses, steps after an accepted empty clause, a RAT resolvent of nine literals); held back,
 the same from seeds, with steps after an accepted empty clause twice. Last of all, the clauses
 written out in OVERLAP_SAMPLE (a RAT resolvent that shares a literal, same sign, with the lemma
-itself); held back, overlap_job() from its seed, the same shape with fresh variables.
+itself); held back, overlap_job() from its seed, where that resolvent is RUP only through a chain
+of units and the proof goes on past it. The sample archive then has MULTI_EMPTY_SAMPLE (two empty
+clauses in the CNF, one deleted) and TOP_VAR_SAMPLE (variable 1000000); held back,
+multi_empty_job() from its seed, and the held-back archive starts with top_var_job().
 
 The verdict is the recipe's own claim. solution/independent_check.py derives every verdict again
 from the files alone; its reports are tests/golden_ref/.
@@ -514,21 +517,89 @@ def wide_rat_job(seed):
 
 
 def overlap_job(seed):
-    """Held back: a lemma (p q) is not RUP and is RAT on p through its one opposite-pivot clause
-    (-p q w), whose resolvent shares q, same sign, with the lemma itself; the union {p,q,w} is RUP
-    only because two further clauses over w and a fresh t force opposite units once w is false.
-    The empty clause at the end is not RUP; other clauses hold filler."""
+    """Held back: a lemma (p q), written with p first, is not RUP and is RAT on p through three
+    clauses holding -p. The resolvent with (-p q w) shares q, same sign, with the lemma and is RUP
+    only through four units in a row once w is false: (w k1), (-k1 k2), (-k2 k3), then (-k3 t) and
+    (-k3 -t) clash. The other two resolvents are RUP through the units f and u, (-u v). RUP lemmas
+    come before and after it; later a unit (s) with (-s x) in the CNF is rejected. Every other
+    clause holds a forced literal."""
     r, n, vs = lits_of(seed)
     sign = [v if r.random() < .5 else -v for v in vs]
-    p, q, w, t = sign.pop(), sign.pop(), sign.pop(), sign.pop()
-    filler = sign[: len(sign) // 2]
-    extra = sign[len(sign) // 2:]
-    cnf = [r.sample([-p, q, w], 3), r.sample([w, t], 2), r.sample([w, -t], 2)]
-    cnf += [r.sample([r.choice(filler)] + r.sample(extra, k), k + 1)
-            for k in (r.randrange(1, 4) for _ in range(r.randrange(5, 10)))]
+    p, q, w, k1, k2, k3, t, f, u, v, s, x = (sign.pop() for _ in range(12))
+    filler = sign
+    forced = [f, u, v]
+
+    def fill():
+        return [y if r.random() < .5 else -y for y in r.sample(filler, r.randrange(1, 4))]
+
+    cnf = [[-p, q, w], [w, k1], [-k1, k2], [-k2, k3], [-k3, t], [-k3, -t], [-p, f], [-p, v],
+           [f], [u], [-u, v], [-s, x]] + [[r.choice(forced)] + fill() for _ in range(r.randrange(8, 14))]
+    cnf = [r.sample(c, len(c)) for c in cnf]
     r.shuffle(cnf)
-    proof = [text(r.sample([p, q], 2)), "0"]
-    return RawJob([f"p cnf {n} {len(cnf)}"] + [text(c) for c in cnf], proof, 2)
+
+    def pads(k):
+        return [text(r.sample(c, len(c))) for c in ([r.choice(forced)] + fill() for _ in range(k))]
+    proof = pads(r.randrange(3, 7)) + [text([p, q])] + pads(r.randrange(3, 7))
+    proof.append(text([s]))
+    fail = len(proof)
+    proof += pads(r.randrange(1, 4)) + ["0"]
+    return RawJob([f"p cnf {n} {len(cnf)}"] + [text(c) for c in cnf], proof, fail)
+
+
+# two empty clauses in the CNF; the proof deletes one, so the empty clause added after is RUP
+MULTI_EMPTY_SAMPLE = (["p cnf 1 2", "0", "0"], ["d 0", "0"], None)
+
+# the largest variable a job may have
+TOP_VAR_SAMPLE = (["p cnf 1000000 2", "1000000 0", "-1000000 0"], ["0"], None)
+
+
+def multi_empty_job(seed):
+    """Held back: three empty clauses in the CNF. The proof deletes them one at a time, with RUP
+    lemmas between; the unit (x), (-x y) being in the CNF, is accepted only because an empty clause
+    is still there. After the third deletion a unit (z), (-z w) being in the CNF, is rejected."""
+    r, n, vs = lits_of(seed)
+    sign = [v if r.random() < .5 else -v for v in vs]
+    f1, f2, x, y, z, w = (sign.pop() for _ in range(6))
+    filler = sign
+    forced = [f1, f2]
+
+    def pads(k):
+        return [text(r.sample(c, len(c))) for c in
+                ([r.choice(forced)] + [g if r.random() < .5 else -g for g in r.sample(filler, r.randrange(1, 4))]
+                 for _ in range(k))]
+    cnf = [text(c) for c in [[f1], [f2], r.sample([-x, y], 2), r.sample([-z, w], 2)]] + pads(r.randrange(8, 14))
+    for _ in range(3):
+        cnf.insert(r.randrange(len(cnf) + 1), "0")
+    proof = pads(r.randrange(1, 4)) + ["d 0", text([x])] + pads(r.randrange(1, 4)) + ["d 0"]
+    proof += pads(r.randrange(1, 4)) + ["d 0"] + pads(r.randrange(2, 5)) + [text([z])]
+    fail = len(proof)
+    proof += pads(r.randrange(1, 3)) + ["0"]
+    return RawJob([f"p cnf {n} {len(cnf)}"] + cnf, proof, fail)
+
+
+def top_var_job(seed):
+    """Held back: V is 1000000 and the unit (P), P = 1000000 or -1000000, is neither RUP nor RAT,
+    (-P w) being in the CNF. The CNF's first line is (x y), and (-x z), (-x -z) make x a failed
+    literal that propagation from nothing does not find. RUP lemmas come before (P); the proof
+    goes on after it to an empty clause."""
+    r, _, vs = lits_of(seed)
+    sign = [v if r.random() < .5 else -v for v in vs]
+    x, y, z, w, f1, f2 = (sign.pop() for _ in range(6))
+    P = 1000000 if r.random() < .5 else -1000000
+    filler = sign
+    forced = [f1, f2]
+
+    def pads(k):
+        return [text(r.sample(c, len(c))) for c in
+                ([r.choice(forced)] + [g if r.random() < .5 else -g for g in r.sample(filler, r.randrange(1, 4))]
+                 for _ in range(k))]
+    rest = [text(c) for c in [[f1], [f2], r.sample([-x, z], 2), r.sample([-x, -z], 2), r.sample([-P, w], 2)]]
+    rest += pads(r.randrange(6, 12))
+    r.shuffle(rest)
+    proof = pads(r.randrange(2, 6)) + [text([P])]
+    fail = len(proof)
+    proof += pads(r.randrange(1, 4)) + ["0"]
+    return RawJob([f"p cnf 1000000 {len(rest) + 1}", text([x, y])] + rest, proof, fail)
 
 
 def fixed_job(spec):
@@ -566,6 +637,9 @@ ARCHIVES = {
     ],
 }
 
+# a job an archive starts with, by name
+FIRST_JOBS = {"sample": [], "hidden": [("run-0907", lambda: top_var_job(9315))]}
+
 # the small jobs each archive ends with, by name
 RAT_JOBS = {
     "sample": [("run-5583", lambda: fixed_job(RAT_SAMPLE)),
@@ -574,14 +648,17 @@ RAT_JOBS = {
                ("sat-0471", lambda: RawJob(*EMPTY_CNF_SAMPLE)),
                ("run-2219", lambda: RawJob(*STOP_SAMPLE)),
                ("job-7738", lambda: RawJob(*WIDE_RAT_SAMPLE)),
-               ("overlap", lambda: fixed_job(OVERLAP_SAMPLE))],
+               ("overlap", lambda: fixed_job(OVERLAP_SAMPLE)),
+               ("cnf-1187", lambda: RawJob(*MULTI_EMPTY_SAMPLE)),
+               ("run-6650", lambda: RawJob(*TOP_VAR_SAMPLE))],
     "hidden": [("cnf-6412", lambda: rat_job(9307)),
                ("run-8843", lambda: edge_job(9308)),
                ("cnf-3055", lambda: empty_cnf_job(9309)),
                ("job-9146", lambda: stop_job(9310, False)),
                ("sat-6620", lambda: stop_job(9311, True)),
                ("run-4417", lambda: wide_rat_job(9312)),
-               ("sat-7744", lambda: overlap_job(9313))],
+               ("sat-7744", lambda: overlap_job(9313)),
+               ("job-2581", lambda: multi_empty_job(9314))],
 }
 
 
@@ -606,6 +683,10 @@ def build_archive(which, out, golden):
     order = list(range(len(spec)))
     rng.shuffle(order)
     lines = []
+    for name, make in FIRST_JOBS[which]:
+        job = make()
+        write_job(job, os.path.join(out, name))
+        lines.append(f"{name} {job.verdict()}")
     for k in order:
         seed, p, fail, at = spec[k]
         job = Job(seed, p).build(fail, at)

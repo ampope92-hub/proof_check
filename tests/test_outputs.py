@@ -32,6 +32,8 @@ SAMPLE = {
     "run-2219": "stop",      # steps after an accepted empty clause
     "job-7738": "widerat",   # a RAT resolvent of nine literals
     "overlap": "overlap",    # a RAT resolvent that shares a literal, same sign, with the lemma
+    "cnf-1187": "multiempty",  # two empty clauses in the CNF, one deleted
+    "run-6650": "topvar",    # variable 1000000
 }
 HIDDEN = {
     "sat-7095": "clean",
@@ -46,7 +48,9 @@ HIDDEN = {
     "job-9146": "stop",      # the final empty clause is rejected
     "sat-6620": "stoplemma", # a unit lemma is rejected
     "run-4417": "widerat",   # a RAT resolvent of ten or more literals
-    "sat-7744": "overlap",   # held back: a RAT resolvent that shares a literal, same sign
+    "sat-7744": "overlap",   # such a resolvent, RUP only through a chain of units; a later unit rejected
+    "job-2581": "multiempty",  # three empty clauses in the CNF, deleted one by one
+    "run-0907": "topvar",    # a unit over variable 1000000 that is neither RUP nor RAT
 }
 
 
@@ -151,10 +155,11 @@ def test_sample_rat_resolvent_is_checked_by_rup():
 
 
 def test_sample_empty_clause_and_separators():
-    """An empty clause in the CNF makes every addition RUP; tabs separate literals like spaces do,
-    and eight-literal clauses count in full."""
-    check_job("sample", "empty", SAMPLE)
-    check_job("sample", "tabwide", SAMPLE)
+    """An empty clause in the CNF makes every addition RUP, and a second copy keeps it so after one
+    is deleted; tabs separate literals like spaces do, eight-literal clauses count in full, and
+    variable 1000000 is a variable like any other."""
+    for kind in ("empty", "tabwide", "multiempty", "topvar"):
+        check_job("sample", kind, SAMPLE)
 
 
 def test_sample_no_clauses_empty_clause_then_more_steps_wide_resolvent():
@@ -211,8 +216,11 @@ def test_hidden_rat_resolvents_are_checked_by_rup():
 
 def test_hidden_empty_clause_and_separators():
     """Held back: a lemma accepted only through the CNF's empty clause, the empty clause deleted,
-    tab-separated lines and eight-literal clauses, and an empty clause at the end that is not RUP."""
-    check_job("hidden", "edge", HIDDEN)
+    tab-separated lines and eight-literal clauses, and an empty clause at the end that is not RUP;
+    three empty clauses deleted one by one, a lemma rejected only after the last is gone; a unit
+    over variable 1000000 rejected."""
+    for kind in ("edge", "multiempty", "topvar"):
+        check_job("hidden", kind, HIDDEN)
 
 
 def test_hidden_no_clauses_empty_clause_then_more_steps_wide_resolvent():

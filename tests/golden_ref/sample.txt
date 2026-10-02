@@ -10,3 +10,5 @@ sat-0471 FAIL 1
 run-2219 FAIL 5
 job-7738 FAIL 2
 overlap FAIL 2
+cnf-1187 OK
+run-6650 OK
