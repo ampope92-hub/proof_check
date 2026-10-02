@@ -32,7 +32,9 @@ edge jobs: in the sample archive EMPTY_SAMPLE (an empty clause in the CNF) and T
 (tabs between literals, eight-literal clauses); held back, edge_job() from its seed, all three.
 Last come the cases written out in EMPTY_CNF_SAMPLE, STOP_SAMPLE and WIDE_RAT_SAMPLE (a CNF with
 no clauses, steps after an accepted empty clause, a RAT resolvent of nine literals); held back,
-the same from seeds, with steps after an accepted empty clause twice.
+the same from seeds, with steps after an accepted empty clause twice. Last of all, the clauses
+written out in OVERLAP_SAMPLE (a RAT resolvent that shares a literal, same sign, with the lemma
+itself); held back, overlap_job() from its seed, the same shape with fresh variables.
 
 The verdict is the recipe's own claim. solution/independent_check.py derives every verdict again
 from the files alone; its reports are tests/golden_ref/.
@@ -435,6 +437,11 @@ STOP_SAMPLE = (["p cnf 1 2", "1 0", "-1 0"], ["0", "d 0", "d 1 0", "d -1 0", "0"
 # (1 ... 8) is RAT on 1 only through its resolvent with (-1 9), nine literals
 WIDE_RAT_SAMPLE = (["p cnf 9 2", "9 0", "-1 9 0"], ["1 2 3 4 5 6 7 8 0", "0"], 2)
 
+# (1 2) is not RUP and is RAT on 1 only through (-1 2 3): the resolvent {1,2,3} shares 2, same
+# sign, with the lemma itself; it is RUP only because (3 4) and (3 -4) force opposite units once
+# 3 is false. The empty clause at the end is not RUP.
+OVERLAP_SAMPLE = (4, [[-1, 2, 3], [3, 4], [3, -4]], [("a", [1, 2]), ("a", [])], 2)
+
 
 def lits_of(seed):
     r = random.Random(seed)
@@ -506,6 +513,24 @@ def wide_rat_job(seed):
     return RawJob([f"p cnf {n} {len(cnf)}"] + [text(x) for x in cnf], proof, 3)
 
 
+def overlap_job(seed):
+    """Held back: a lemma (p q) is not RUP and is RAT on p through its one opposite-pivot clause
+    (-p q w), whose resolvent shares q, same sign, with the lemma itself; the union {p,q,w} is RUP
+    only because two further clauses over w and a fresh t force opposite units once w is false.
+    The empty clause at the end is not RUP; other clauses hold filler."""
+    r, n, vs = lits_of(seed)
+    sign = [v if r.random() < .5 else -v for v in vs]
+    p, q, w, t = sign.pop(), sign.pop(), sign.pop(), sign.pop()
+    filler = sign[: len(sign) // 2]
+    extra = sign[len(sign) // 2:]
+    cnf = [r.sample([-p, q, w], 3), r.sample([w, t], 2), r.sample([w, -t], 2)]
+    cnf += [r.sample([r.choice(filler)] + r.sample(extra, k), k + 1)
+            for k in (r.randrange(1, 4) for _ in range(r.randrange(5, 10)))]
+    r.shuffle(cnf)
+    proof = [text(r.sample([p, q], 2)), "0"]
+    return RawJob([f"p cnf {n} {len(cnf)}"] + [text(c) for c in cnf], proof, 2)
+
+
 def fixed_job(spec):
     nv, cnf, proof, fail_line = spec
     job = Job(0, {})
@@ -548,13 +573,15 @@ RAT_JOBS = {
                ("job-6175", lambda: RawJob(*TAB_WIDE_SAMPLE)),
                ("sat-0471", lambda: RawJob(*EMPTY_CNF_SAMPLE)),
                ("run-2219", lambda: RawJob(*STOP_SAMPLE)),
-               ("job-7738", lambda: RawJob(*WIDE_RAT_SAMPLE))],
+               ("job-7738", lambda: RawJob(*WIDE_RAT_SAMPLE)),
+               ("overlap", lambda: fixed_job(OVERLAP_SAMPLE))],
     "hidden": [("cnf-6412", lambda: rat_job(9307)),
                ("run-8843", lambda: edge_job(9308)),
                ("cnf-3055", lambda: empty_cnf_job(9309)),
                ("job-9146", lambda: stop_job(9310, False)),
                ("sat-6620", lambda: stop_job(9311, True)),
-               ("run-4417", lambda: wide_rat_job(9312))],
+               ("run-4417", lambda: wide_rat_job(9312)),
+               ("sat-7744", lambda: overlap_job(9313))],
 }
 
 

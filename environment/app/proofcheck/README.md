@@ -77,5 +77,5 @@ subdirectories), and the binary runs from `/app/proofcheck` with `PROOFS_HOST` a
 set, no arguments and nothing on standard input. The grader stops a run at 60 seconds of wall
 clock, caps its address space at 2 GiB and blocks any attempt to exec another program.
 
-An archive the checker is graded on holds at most 12 jobs. A job has at most 1,000,000 variables,
+An archive the checker is graded on holds at most 13 jobs. A job has at most 1,000,000 variables,
 1,000,000 CNF clauses and 1,500,000 proof lines.

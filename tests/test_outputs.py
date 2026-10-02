@@ -31,6 +31,7 @@ SAMPLE = {
     "sat-0471": "nocnf",     # a CNF with no clauses
     "run-2219": "stop",      # steps after an accepted empty clause
     "job-7738": "widerat",   # a RAT resolvent of nine literals
+    "overlap": "overlap",    # a RAT resolvent that shares a literal, same sign, with the lemma
 }
 HIDDEN = {
     "sat-7095": "clean",
@@ -45,6 +46,7 @@ HIDDEN = {
     "job-9146": "stop",      # the final empty clause is rejected
     "sat-6620": "stoplemma", # a unit lemma is rejected
     "run-4417": "widerat",   # a RAT resolvent of ten or more literals
+    "sat-7744": "overlap",   # held back: a RAT resolvent that shares a literal, same sign
 }
 
 
@@ -141,8 +143,11 @@ def test_sample_rat_pivot_is_the_first_literal():
 
 def test_sample_rat_resolvent_is_checked_by_rup():
     """A lemma that is not RUP is accepted when its one resolvent on the first literal is RUP
-    without being tautological; the empty clause after it is rejected."""
+    without being tautological; the empty clause after it is rejected. A resolvent that shares a
+    literal, same sign, with the lemma itself is still checked as a set, not rejected for the
+    repeat."""
     check_job("sample", "rat", SAMPLE)
+    check_job("sample", "overlap", SAMPLE)
 
 
 def test_sample_empty_clause_and_separators():
@@ -198,8 +203,10 @@ def test_hidden_rat_pivot_is_the_first_literal():
 
 def test_hidden_rat_resolvents_are_checked_by_rup():
     """Held back: a lemma whose resolvents are RUP only through propagation is accepted, and a unit
-    whose middle resolvent of three is not RUP is rejected at its line."""
+    whose middle resolvent of three is not RUP is rejected at its line. A resolvent that shares a
+    literal, same sign, with the lemma itself is still accepted as a set."""
     check_job("hidden", "rat", HIDDEN)
+    check_job("hidden", "overlap", HIDDEN)
 
 
 def test_hidden_empty_clause_and_separators():
