@@ -1,15 +1,20 @@
 """Grades the two runs tests/test.sh made of the agent's checker.
 
 Each run's standard output is the report; tests/golden/<run>.txt is the report that archive must
-get, one "<job> OK" or "<job> FAIL <line>" per job in the order the archive lists its jobs. Every
-job in both archives exists to make one reading of the README's rules show: which job carries
-which rule is written next to its test below.
+get, one "<job> OK" or "<job> FAIL <line>" per job in the order the archive lists its jobs, as the
+generator's recipe claims it. tests/golden_ref/<run>.txt is the same report derived a second time,
+from the archive's files alone, by solution/independent_check.py, a checker written from the
+README's rules that shares no code with the generator or the reference; the first test asserts
+the two agree. Every job in both archives exists to make one reading of the README's rules show:
+which job carries which rule is written next to its test below. Lines are compared exactly, with
+only the line terminator taken off; a missing final newline is accepted.
 """
 
 from pathlib import Path
 
 RUN = Path("/opt/run")
 GOLDEN = Path("/tests/golden")
+GOLDEN_REF = Path("/tests/golden_ref")
 LIMIT_MS = 60_000
 
 # which rule each job isolates (names are the ones the archives list)
@@ -20,6 +25,7 @@ SAMPLE = {
     "job-3127": "unit",      # a chain unit that leans on a deleted unit clause
     "sat-1736": "reason",    # a block lemma whose false literal lost its only reason to a deletion
     "cnf-4008": "pivot",     # an extension clause whose first literal is not its pivot
+    "run-5583": "rat",       # a lemma that is RAT with a resolvent RUP but not tautological
 }
 HIDDEN = {
     "sat-7095": "clean",
@@ -28,25 +34,29 @@ HIDDEN = {
     "sat-2364": "reason",
     "sat-2640": "pivot",
     "sat-4684": "large",     # near the README's size bounds; a reason deleted late
+    "cnf-6412": "rat",       # RAT resolvents RUP through propagation; a middle resolvent not RUP
 }
 
 
+def lines(path):
+    """The file's lines exactly, each with its LF taken off; a missing final LF is accepted."""
+    text = path.read_bytes().decode("utf-8", "replace") if path.exists() else ""
+    out = text.split("\n")
+    if out[-1] == "":
+        out.pop()
+    return out
+
+
 def golden(run):
-    rows = [ln.split() for ln in (GOLDEN / f"{run}.txt").read_text().splitlines() if ln.strip()]
-    return [(r[0], " ".join(r[1:])) for r in rows]
+    return lines(GOLDEN / f"{run}.txt")
 
 
 def report(run):
-    """The report as (job, verdict) pairs. Trailing blanks, a missing final newline and blank
-    lines are all accepted; anything else on a line is kept and will not match."""
-    path = RUN / f"report_{run}.txt"
-    text = path.read_bytes().decode("utf-8", "replace") if path.exists() else ""
-    out = []
-    for ln in text.splitlines():
-        words = ln.split()
-        if words:
-            out.append((words[0], " ".join(words[1:])))
-    return out
+    return lines(RUN / f"report_{run}.txt")
+
+
+def job_of(line):
+    return line.split(" ", 1)[0]
 
 
 def finished(run):
@@ -55,16 +65,22 @@ def finished(run):
 
 
 def verdict_of(run, job):
-    got = dict(report(run))
-    want = dict(golden(run))
-    assert job in want
-    return got.get(job), want[job]
+    got = [ln for ln in report(run) if job_of(ln) == job]
+    want = [ln for ln in golden(run) if job_of(ln) == job]
+    assert len(want) == 1
+    return (got[0] if got else None), want[0]
 
 
 def check_job(run, kind, table):
     job = next(j for j, k in table.items() if k == kind)
     got, want = verdict_of(run, job)
     assert got == want, f"{run} job {job} ({kind}): report says {got!r}, the proof earns {want!r}"
+
+
+def test_two_references_agree():
+    """The recipe's reports and the independent checker's reports are the same, line for line."""
+    for run in ("sample", "hidden"):
+        assert golden(run) == lines(GOLDEN_REF / f"{run}.txt"), run
 
 
 def test_build():
@@ -74,15 +90,15 @@ def test_build():
 
 def test_sample_run_ended_in_time():
     """The run against the environment's archive (moved to another address and port, smaller
-    pages, 6 requests per connection) ends before the 60 second wall limit."""
+    pages, 5 requests per connection) ends before the 60 second wall limit."""
     rc, ms = finished("sample")
-    assert ms < LIMIT_MS - 100, f"still running at the limit (exit status {rc}, {ms} ms)"
+    assert ms < LIMIT_MS, f"still running at the limit (exit status {rc}, {ms} ms)"
 
 
 def test_sample_report_lists_every_job_in_archive_order():
     """One line per job, in the order JOBS gives, each '<job> OK' or '<job> FAIL <line>', and
     nothing else."""
-    assert [j for j, _ in report("sample")] == [j for j, _ in golden("sample")]
+    assert [job_of(ln) for ln in report("sample")] == [job_of(ln) for ln in golden("sample")]
 
 
 def test_sample_clean_proof_is_ok():
@@ -113,16 +129,22 @@ def test_sample_rat_pivot_is_the_first_literal():
     check_job("sample", "pivot", SAMPLE)
 
 
+def test_sample_rat_resolvent_is_checked_by_rup():
+    """A lemma that is not RUP is accepted when its one resolvent on the first literal is RUP
+    without being tautological; the empty clause after it is rejected."""
+    check_job("sample", "rat", SAMPLE)
+
+
 def test_hidden_run_ended_in_time():
     """The run against the held-back archive, reached by host name, ends before the 60 second
     wall limit within 2 GiB of address space."""
     rc, ms = finished("hidden")
-    assert ms < LIMIT_MS - 100, f"still running at the limit (exit status {rc}, {ms} ms)"
+    assert ms < LIMIT_MS, f"still running at the limit (exit status {rc}, {ms} ms)"
 
 
 def test_hidden_report_lists_every_job_in_archive_order():
     """The held-back report has one line per job in the archive's order and nothing else."""
-    assert [j for j, _ in report("hidden")] == [j for j, _ in golden("hidden")]
+    assert [job_of(ln) for ln in report("hidden")] == [job_of(ln) for ln in golden("hidden")]
 
 
 def test_hidden_clean_proof_is_ok():
@@ -148,6 +170,12 @@ def test_hidden_deleted_reason_takes_its_literal():
 def test_hidden_rat_pivot_is_the_first_literal():
     """Held back: a clause that is RAT only on its second literal is rejected."""
     check_job("hidden", "pivot", HIDDEN)
+
+
+def test_hidden_rat_resolvents_are_checked_by_rup():
+    """Held back: a lemma whose resolvents are RUP only through propagation is accepted, and a unit
+    whose middle resolvent of three is not RUP is rejected at its line."""
+    check_job("hidden", "rat", HIDDEN)
 
 
 def test_hidden_large_job():

@@ -25,8 +25,12 @@ recipe:
     literal lost its only reason to a deletion (reason), an extension clause whose first
     literal is not its pivot (pivot).
 
-The verdict is the recipe's own claim. It was checked against a from-scratch checker that
-keeps no state between lines on every job it could afford to run.
+Each archive also ends with one small RAT job (rat): in the sample archive the clauses written
+out in RAT_SAMPLE below; held back, rat_job() from its seed, a lemma whose resolvents are RUP
+without being tautological and then one whose middle resolvent is not RUP.
+
+The verdict is the recipe's own claim. solution/independent_check.py derives every verdict again
+from the files alone; its reports are tests/golden_ref/.
 """
 import argparse
 import json
@@ -291,6 +295,61 @@ class Job:
                 yield (s + " 0") if c else "0"
 
 
+RAT_SAMPLE = (3, [[3], [-1, 3]], [("a", [1, 2]), ("a", [])], 2)
+
+
+def rat_job(seed):
+    """A lemma (p q) that is not RUP and is RAT on p: every clause holding -p gives a resolvent
+    that is RUP and not tautological, one of them only through propagation. Later a unit (s) that
+    is not RUP, where -s sits in three clauses and only the middle one's resolvent is not RUP.
+    Everything else is satisfied by literals the units force."""
+    job = Job(seed, {})
+    r = job.r
+    n = r.randrange(40, 60)
+    vs = list(range(1, n + 1))
+    r.shuffle(vs)
+    lits = [v if r.random() < .5 else -v for v in vs]
+    u, w, x, y, v1, v, v2, p, q, s = lits[:10]
+    filler = lits[10:]
+    job.nv = n
+    forced = [u, w, v1, v, v2]
+
+    def fill():
+        return [f if r.random() < .5 else -f for f in r.sample(filler, r.randrange(1, 4))]
+
+    sat = [[r.choice(forced)] + fill() for _ in range(r.randrange(25, 40))]
+    base = [[u], [-u, w], [x, y], [x, -y], [v1], [v], [-v1, v2], [-p, u], [-p, w] + fill()[:1], [-p, x]] + sat
+    r.shuffle(base)
+    third = len(base) // 3
+    base.insert(r.randrange(2 * third, len(base)), [-s, v2] + fill()[:1])
+    base.insert(r.randrange(third, 2 * third), [-s, -v])
+    base.insert(r.randrange(0, third), [-s, v1])
+    job.cnf = [job.shuf(c) for c in base]
+    gone = r.sample(range(len(sat)), 6)
+
+    def pads(k):
+        for _ in range(k):
+            if gone and r.random() < .3:
+                job.dele(sat[gone.pop()])
+            else:
+                job.add([r.choice(forced)] + fill())
+    pads(r.randrange(3, 9))
+    job.add([p, q], first=p)
+    pads(r.randrange(3, 9))
+    job.fail_line = len(job.proof) + 1
+    job.add([s])
+    pads(r.randrange(2, 6))
+    job.proof.append(("a", []))
+    return job
+
+
+def fixed_job(spec):
+    nv, cnf, proof, fail_line = spec
+    job = Job(0, {})
+    job.nv, job.cnf, job.proof, job.fail_line = nv, cnf, proof, fail_line
+    return job
+
+
 def params(blocks, chain, filler, satisfied, ext, reuse, ev, dup, pad, second, zunit):
     return {"blocks": blocks, "chain": chain, "filler": filler, "satisfied": satisfied,
             "ext": ext, "reuse": reuse, "ev": ev, "dup": dup, "pad": pad, "second": second,
@@ -317,6 +376,12 @@ ARCHIVES = {
         (9305, SMALL_H, "reason", 0.58),
         (9306, SMALL_H, "pivot", 0.77),
     ],
+}
+
+# the small RAT job each archive ends with, by name
+RAT_JOBS = {
+    "sample": ("run-5583", lambda: fixed_job(RAT_SAMPLE)),
+    "hidden": ("cnf-6412", lambda: rat_job(9307)),
 }
 
 
@@ -348,6 +413,10 @@ def build_archive(which, out, golden):
         lines.append(f"{names[k]} {job.verdict()}")
         print(f"{names[k]} seed {seed} vars {job.nv} clauses {len(job.cnf)} "
               f"proof {len(job.proof)} -> {job.verdict()}", file=sys.stderr)
+    name, make = RAT_JOBS[which]
+    job = make()
+    write_job(job, os.path.join(out, name))
+    lines.append(f"{name} {job.verdict()}")
     with open(os.path.join(out, "jobs.txt"), "w") as fh:
         fh.write("".join(ln.split()[0] + "\n" for ln in lines))
     if golden:

@@ -161,8 +161,8 @@ run_checker() {
   /usr/bin/head -c 2000 "/opt/run/stderr_$name.txt"
 }
 
-echo "=== the archive the agent's environment serves, on another address and port, smaller pages, 6 requests a connection ==="
-start_archive sample 127.0.0.2 7811 150 6 3 || exit 0
+echo "=== the archive the agent's environment serves, on another address and port, smaller pages, 5 requests a connection ==="
+start_archive sample 127.0.0.2 7811 150 5 3 || exit 0
 run_checker 127.0.0.2 7811 sample
 stop_archive
 
